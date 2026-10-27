@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="window">
+      <rect x="176" y="224" width="672" height="576" rx="56" />
+    </clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#1E2640" />
+
+  <!-- The window: chat on the left, the plan pane on the right. -->
+  <rect x="176" y="224" width="672" height="576" rx="56" fill="#2C365A" />
+  <rect x="560" y="224" width="288" height="576" fill="#F2B544" clip-path="url(#window)" />
+
+  <!-- Chat lines. -->
+  <g stroke="#8A93B8" stroke-width="28" stroke-linecap="round">
+    <line x1="252" y1="340" x2="484" y2="340" />
+    <line x1="252" y1="420" x2="440" y2="420" />
+    <line x1="252" y1="500" x2="484" y2="500" />
+    <line x1="252" y1="580" x2="400" y2="580" />
+  </g>
+
+  <!-- The plan: two checked steps, bold enough to read at small sizes. -->
+  <g stroke="#1E2640" stroke-width="40" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="614,426 644,456 696,396" />
+    <line x1="738" y1="430" x2="794" y2="430" />
+    <polyline points="614,590 644,620 696,560" />
+    <line x1="738" y1="594" x2="794" y2="594" />
+  </g>
+
+  <!-- Window frame and divider, drawn last so they sit on top. -->
+  <line x1="560" y1="224" x2="560" y2="800" stroke="#F4F1EA" stroke-width="28" />
+  <rect x="176" y="224" width="672" height="576" rx="56" fill="none" stroke="#F4F1EA" stroke-width="36" />
+</svg>

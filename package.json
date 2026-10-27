@@ -1,0 +1,15 @@
+{
+  "name": "claude-code-plan-view",
+  "private": true,
+  "scripts": {
+    "check": "npm run typecheck && npm run format:check && claude plugin validate . && npm test",
+    "typecheck": "tsc -p .",
+    "test": "claude plugin test .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "plan-view",
+  "version": "0.1.0",
+  "description": "Shows Claude's plan-mode plan in a pane beside the chat and updates it live as Claude writes",
+  "icon": "./.claude-plugin/icon.png",
+  "author": {
+    "name": "Yuki Saito"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "autoOpen": {
+      "type": "boolean",
+      "title": "Open automatically",
+      "description": "Open the pane when Claude writes a plan. Off: only /plan-view opens it.",
+      "default": true
+    },
+    "width": {
+      "type": "string",
+      "title": "Pane width",
+      "description": "Share of the terminal the side pane's content asks for, plus its frame: narrow about 30%, medium about 38%, wide about 45% (the most Claude Code allows).",
+      "options": ["narrow", "medium", "wide"],
+      "default": "wide"
+    }
+  }
+}

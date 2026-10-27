@@ -1,0 +1,5 @@
+# Written by Claude Code, which also puts a .gitignore inside; kept here in case that one is missing.
+.claude-plugin/types/
+.DS_Store
+*.log
+node_modules/

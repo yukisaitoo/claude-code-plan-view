@@ -1,0 +1,14 @@
+{
+  "name": "plan-view",
+  "description": "View plan in a side pane for Claude Code",
+  "owner": {
+    "name": "Yuki Saito"
+  },
+  "plugins": [
+    {
+      "name": "plan-view",
+      "source": "./",
+      "description": "Shows Claude's plan-mode plan in a pane beside the chat and updates it live as Claude writes"
+    }
+  ]
+}
