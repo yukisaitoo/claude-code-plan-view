@@ -4,6 +4,8 @@ A Claude Code plugin that shows Claude's plan in a pane beside the chat and upda
 
 ![Demo](./doc/demo.png)
 
+Unofficial; not affiliated with Anthropic.
+
 ## Install
 
 In Claude Code:
