@@ -1029,23 +1029,23 @@ describe('rendering', () => {
   })
 
   test('simplifies joined emoji, skin tones and tag flags, which some terminals draw too wide', async ($, on) => {
-    const family = '\u{1F468}‍\u{1F469}‍\u{1F467}'
-    const technologist = '\u{1F469}\u{1F3FD}‍\u{1F4BB}'
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'
+    const technologist = '\u{1F469}\u{1F3FD}\u200D\u{1F4BB}'
     const wave = '\u{1F44B}\u{1F3FF}'
-    const rainbowFlag = '\u{1F3F3}️‍\u{1F308}'
+    const rainbowFlag = '\u{1F3F3}\uFE0F\u200D\u{1F308}'
     const scotland = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}'
     fakeEngine(on, { text: [family, technologist, wave, rainbowFlag, scotland].join(' ') })
     await writePlan($)
 
-    expect(await drawnMarkdown($)).toBe('\u{1F468} \u{1F469} \u{1F44B} \u{1F3F3}️ \u{1F3F4}')
+    expect(await drawnMarkdown($)).toBe('\u{1F468} \u{1F469} \u{1F44B} \u{1F3F3}\uFE0F \u{1F3F4}')
   })
 
   test('leaves simple emoji, keycaps, country flags, CJK and non-emoji joiners alone', async ($, on) => {
     const rocket = '\u{1F680}'
-    const heart = '❤️'
-    const keycap = '1️⃣'
+    const heart = '\u2764\uFE0F'
+    const keycap = '1\uFE0F\u20E3'
     const japanFlag = '\u{1F1EF}\u{1F1F5}'
-    const malayalam = 'ന്‍'
+    const malayalam = '\u0D28\u0D4D\u200D'
     const text = [rocket, heart, keycap, japanFlag, 'ダークモード', malayalam].join(' ')
     fakeEngine(on, { text })
     await writePlan($)

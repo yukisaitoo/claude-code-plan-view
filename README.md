@@ -2,7 +2,7 @@
 
 A Claude Code plugin that shows Claude's plan in a pane beside the chat and updates it live while Claude writes it in plan mode.
 
-![Demo](./doc/demo.png)
+![Demo](./doc/demo.webp)
 
 Unofficial; not affiliated with Anthropic.
 

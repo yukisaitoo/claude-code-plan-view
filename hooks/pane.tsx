@@ -1,4 +1,4 @@
-import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
+import type { ElementTable, RenderSurface } from 'claude-code'
 
 import type { Plan } from '../types'
 import type { Block } from './markdown'
@@ -15,10 +15,9 @@ const FLAG_TAGS = /[\u{E0020}-\u{E007F}]/gu
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-/** The plan file's text, ready to draw, or null if it can't be read. */
-export async function readPlanText($: EngineInterface, path: string) {
-  const text = await $.fs.read(path).catch(() => null)
-  return text === null ? null : unwrap(simplifyEmoji(normalize(text)))
+/** The plan file's text, cleaned up and ready to draw. */
+export function planTextToDraw(text: string) {
+  return unwrap(simplifyEmoji(normalize(text)))
 }
 
 /**
@@ -30,7 +29,7 @@ export async function readPlanText($: EngineInterface, path: string) {
 function simplifyEmoji(text: string) {
   let simple = ''
   for (const { segment } of graphemes.segment(text)) {
-    const joiner = segment.indexOf('‍')
+    const joiner = segment.indexOf('\u200D')
     const isJoinedEmoji = joiner > 0 && /\p{Extended_Pictographic}/u.test(segment)
     simple += isJoinedEmoji ? segment.slice(0, joiner) : segment
   }

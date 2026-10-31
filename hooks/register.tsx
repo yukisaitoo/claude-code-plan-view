@@ -2,8 +2,10 @@ import type { EngineInterface, PluginOptions, Register, RenderSurface, RenderVie
 import { atom, read, update } from 'claude-code'
 
 import type { Plan } from '../types'
-import { NO_PLAN, drawPlan, readPlanText } from './pane'
-import { forgetMissingPlans, forgetSession, loadSession, planExists, saveAsNewest, saveSession } from './saved-sessions'
+import { NO_PLAN, drawPlan, planTextToDraw } from './pane'
+
+// Every function that takes `$` lives in this file: the plugin directory lists
+// a mod's calls from the source and can't follow `$` into another file.
 
 const PANE_ID = 'plan'
 const PANE_TITLE = 'Plan'
@@ -316,7 +318,8 @@ async function restoreSession($: EngineInterface) {
   if (!saved.isOpen) return
 
   // Left as it is, so a new Pane width applies at the next open.
-  if ((await $.ui.panes()).some(pane => pane.id === PANE_ID)) return
+  const panes = await $.ui.panes()
+  if (panes.some(pane => pane.id === PANE_ID)) return
 
   // Before the first draw the terminal's width is unknown, so the saved one
   // stands in. With no room yet, CC shows the pane once there is.
@@ -325,7 +328,8 @@ async function restoreSession($: EngineInterface) {
 
 /** Restores again when the session id changed: how /clear and an in-app resume are noticed. */
 async function restoreSessionIfChanged($: EngineInterface) {
-  if ((await $.session.id()) !== sessionId) await restoreSession($)
+  const id = await $.session.id()
+  if (id !== sessionId) await restoreSession($)
 }
 
 /**
@@ -340,4 +344,96 @@ async function saveOpenedPlan(
   const latest = await read($, plan)
   if (latest?.path !== path) return
   await saveSession($, { path, isDismissed: latest.isDismissed, ...(latest.isDismissed ? {} : opened) })
+}
+
+// Plan files
+
+/** The plan file's text, ready to draw, or null if it can't be read. */
+async function readPlanText($: EngineInterface, path: string) {
+  const text = await $.fs.read(path).catch(() => null)
+  return text === null ? null : planTextToDraw(text)
+}
+
+/**
+ * Whether a plan file exists. A network location makes `$.fs.exists` reject;
+ * such a plan can't be read either, so it counts as missing.
+ */
+function planExists($: EngineInterface, path: string) {
+  return $.fs.exists(path).catch(() => false)
+}
+
+// Saved sessions: each session's plan path and pane state, so a restarted or
+// resumed session finds its plan and reopens its pane. Each session gets its
+// own key in the store, so sessions never overwrite each other.
+
+/** One session's saved entry. */
+type SavedSession = {
+  path: string
+  /** Whether the pane was open when the session last ran. */
+  isOpen?: boolean
+  /** The width the pane was sized from when it last docked, used on resume before the terminal's width is known. */
+  terminalColumns?: number
+  /** Closed by hand; see `Plan.isDismissed`. */
+  isDismissed?: boolean
+}
+
+const KEY_PREFIX = 'session:'
+const MAX_SAVED = 100
+
+const keyFor = (id: string) => KEY_PREFIX + id
+
+/** A session's saved entry, or undefined if none is saved or it isn't a valid entry. */
+async function loadSession($: EngineInterface, id: string) {
+  const value = await $.store.get(keyFor(id))
+  return isSavedSession(value) ? value : undefined
+}
+
+/** Merges `change` into this session's saved entry. */
+async function saveSession($: EngineInterface, change: SavedSession) {
+  // Asked fresh each time: after a /clear, `sessionId` is stale until the next turn.
+  const id = await $.session.id()
+  const saved = await loadSession($, id)
+  const fields = Object.keys(change) as (keyof SavedSession)[]
+  if (saved && fields.every(field => saved[field] === change[field])) return
+
+  await saveAsNewest($, id, { ...saved, ...change })
+  await pruneSavedSessions($)
+}
+
+/** Deletes a session's saved entry, as when its plan file is gone. */
+async function forgetSession($: EngineInterface, id: string) {
+  await $.store.delete(keyFor(id))
+}
+
+/** Forgets every session whose plan file is gone. */
+async function forgetMissingPlans($: EngineInterface) {
+  for (const key of await sessionKeys($)) {
+    const value = await $.store.get(key)
+    if (isSavedSession(value) && !(await planExists($, value.path))) await $.store.delete(key)
+  }
+}
+
+/**
+ * Saves `entry` as the most recently used session, so pruning drops it last.
+ * Deleting first moves the key to the end of `$.store.keys()`, so the keys
+ * stay ordered from least to most recently used.
+ */
+async function saveAsNewest($: EngineInterface, id: string, entry: SavedSession) {
+  await $.store.delete(keyFor(id))
+  await $.store.set(keyFor(id), entry)
+}
+
+/** Keeps only the most recently used sessions. */
+async function pruneSavedSessions($: EngineInterface) {
+  const keys = await sessionKeys($)
+  for (const key of keys.slice(0, -MAX_SAVED)) await $.store.delete(key)
+}
+
+async function sessionKeys($: EngineInterface) {
+  const keys = await $.store.keys()
+  return keys.filter(key => key.startsWith(KEY_PREFIX))
+}
+
+function isSavedSession(value: unknown): value is SavedSession {
+  return typeof value === 'object' && value !== null && typeof (value as SavedSession).path === 'string'
 }
