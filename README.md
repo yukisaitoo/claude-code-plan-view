@@ -40,7 +40,7 @@ Change these in `/config`.
 
 ## Stored data
 
-The plugin remembers each session's plan file path and pane state (last 100 sessions) under your Claude Code config directory. It never stores plan contents.
+The plugin remembers each session's plan file path and pane state (last 100 sessions) under your Claude Code config directory. It never stores plan contents, and it sends nothing over the network.
 
 ## License
 
