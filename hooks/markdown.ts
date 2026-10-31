@@ -1,38 +1,51 @@
-// How each kind of Markdown block starts. Most allow the up to 3 spaces of
-// indent CommonMark does, and `startsBlock` also checks them at any indent,
-// for nested lists. Two exceptions: the fences match at any indent, so a code
-// block in a nested list is found, and the HTML tags match at none, as their
-// callers trim the line first.
-/**
- * "```" or "~~~" opening a code block, maybe followed by a language. A
- * backtick fence's language can't hold a backtick, so "```code``` text" is
- * inline code, not a fence.
- */
+// How each kind of Markdown block starts. Most allow CommonMark's up to 3
+// spaces of indent. Fences match at any indent (code in a nested list); HTML
+// tags match at none, as their callers trim the line first.
+
+// Code
+
+/** "```" or "~~~" opening a code block. "```code``` text" is inline code, not a fence. */
 const FENCE = /^[ \t]*(?:(`{3,})[^`]*|(~{3,}).*)$/
+
 /** "```" or "~~~" alone on its line, closing a code block. */
 const CLOSING_FENCE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/
-/** The "> " of a quote. */
-const QUOTE = /^ {0,3}>[ \t]?/
-/** Every quote marker opening a line, like the "> > " of a nested quote. */
-const QUOTES = /^(?: {0,3}>[ \t]?)*/
-/** "# Title" through "###### Title". */
-const HEADING = /^ {0,3}#{1,6}(?:[ \t]|$)/
-/** A thematic break (---, ***, ___, all one character), or the === / --- underline of a heading. */
-const RULE = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|=+[ \t]*|-+[ \t]*)$/
-/** "- item", "* item", "+ item", "1. item" or "1) item". */
-const LIST_ITEM = /^ {0,3}(?:[-*+][ \t]|\d{1,9}[.)](?:[ \t]|$))/
-/** A numbered item, like "2. item", or a year that only looks like one. */
-const NUMBERED_ITEM = /^\d{1,9}[.)](?:[ \t]|$)/
-/** "1. item" or "1) item", the only numbered item that can start a list in the middle of a paragraph. */
-const FIRST_ITEM = /^1[.)][ \t]+\S/
+
 /** Four spaces or a tab, which after a blank line starts indented code. */
 const INDENTED_CODE = /^(?: {4}|\t)/
+
+// Quotes, headings, rules and lists
+
+/** The "> " of a quote. */
+const QUOTE = /^ {0,3}>[ \t]?/
+
+/** Every quote marker opening a line, like the "> > " of a nested quote. */
+const QUOTES = /^(?: {0,3}>[ \t]?)*/
+
+/** "# Title" through "###### Title". */
+const HEADING = /^ {0,3}#{1,6}(?:[ \t]|$)/
+
+/** A thematic break (---, ***, ___), or the === / --- underline of a heading. */
+const RULE = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|=+[ \t]*|-+[ \t]*)$/
+
+/** "- item", "* item", "+ item", "1. item" or "1) item". */
+const LIST_ITEM = /^ {0,3}(?:[-*+][ \t]|\d{1,9}[.)](?:[ \t]|$))/
+
+/** A numbered item, like "2. item", or a year that only looks like one. */
+const NUMBERED_ITEM = /^\d{1,9}[.)](?:[ \t]|$)/
+
+/** "1. item" or "1) item": the only numbered item that can start a list mid-paragraph. */
+const FIRST_ITEM = /^1[.)][ \t]+\S/
+
+// Tables
+
 /** The |---|:---:| row under a table's header. */
 const DELIMITER_ROW = /^ {0,3}(?:\|[ \t]*)?:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/
+
+// HTML
+
 /**
  * A block-level HTML tag opening a line, like <details> or </div>, which
- * starts an HTML block even in the middle of a paragraph. The names are
- * CommonMark's. The name must end at a space, `/`, `>` or the line's end.
+ * starts an HTML block even mid-paragraph. The names are CommonMark's.
  */
 const HTML_BLOCK_TAG = new RegExp(
   '^</?(?:' +
@@ -43,11 +56,12 @@ const HTML_BLOCK_TAG = new RegExp(
     ')(?:[\\s/>]|$)',
   'i',
 )
-/**
- * Any other tag alone on its line, like <PlanPane>, which starts an HTML block
- * only where a paragraph isn't going on. Inside one it's just inline text.
- */
+
+/** Any other tag alone on its line, like <PlanPane>. Starts an HTML block only outside a paragraph. */
 const LONE_TAG = /^<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^>]*)?\/?>\s*$/
+
+// Inline
+
 /** Two trailing spaces or a trailing backslash. */
 const HARD_BREAK = /(?: {2}|\\)$/
 
@@ -69,9 +83,10 @@ export function normalize(text: string) {
 /**
  * Joins hard-wrapped lines back together, as a Markdown renderer would.
  * Claude Code draws every newline as a line break, so a plan wrapped at 80
- * columns looks ragged in a narrower pane. A line joins the one before it
- * unless it starts a new block; code, tables, headings and hard breaks keep
- * their line breaks.
+ * columns looks ragged in a narrower pane.
+ *
+ * A line joins the one before it unless it starts a new block. Code, tables,
+ * headings and hard breaks keep their line breaks.
  */
 export function unwrap(text: string) {
   const source = text.split('\n')
@@ -80,7 +95,6 @@ export function unwrap(text: string) {
   // Inside an HTML block, which lasts until a blank line, or a table, which
   // ends where splitTables ends it.
   let verbatim: 'block' | 'table' | undefined
-  // The line the current table's header is on.
   let tableStart = 0
   // Whether the next line may be joined onto the last one.
   let canContinue = false
@@ -141,9 +155,10 @@ export function unwrap(text: string) {
 /**
  * Splits the plan into Markdown and tables, so the pane can draw tables
  * itself. A table is a header row, a delimiter row with as many cells, then
- * every row down to a line that `endsTable`. A table inside a quote is left
- * to Claude Code's Markdown on purpose: drawing it here would lose the
- * quote's bar.
+ * every row down to a line that `endsTable`.
+ *
+ * A table inside a quote is left to Claude Code's Markdown on purpose:
+ * drawing it here would lose the quote's bar.
  */
 export function splitTables(text: string): Block[] {
   const source = text.split('\n')

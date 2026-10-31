@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
+import { describe, expect, test } from 'claude-code/testing'
 
 const PLAN = '/Users/someone/.claude/plans/a-plan.md'
 const WIDE = { columns: 200, rows: 50, isFullscreen: true }

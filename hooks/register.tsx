@@ -1,5 +1,5 @@
-import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register, RenderSurface, RenderViewport } from 'claude-code'
+import { atom, read, update } from 'claude-code'
 
 import type { Plan } from '../types'
 import { NO_PLAN, drawPlan, readPlanText } from './pane'
@@ -7,49 +7,15 @@ import { forgetMissingPlans, forgetSession, loadSession, planExists, saveAsNewes
 
 const PANE_ID = 'plan'
 const PANE_TITLE = 'Plan'
-/** Columns of padding on each side of the plan. */
-const PADDING_X = 1
+const PADDING_X = 1 // Padding on each side of the pane
 
-/** The share of the terminal's width the docked pane asks for. 45% is the most Claude Code allows. */
+// Pane width setting to share of the terminal. 45% is the most Claude Code (CC) allows.
 const WIDTH_SHARES: Record<string, number> = { narrow: 0.3, medium: 0.38, wide: 0.45 }
 
-/**
- * The plugin's /config values. Changing one reloads the plugin, so they're
- * read once per load; `register` sets them before any hook can run.
- */
+/** The plugin's /config values. Read once, in `register`: CC reloads the plugin when a setting changes. */
 let settings: ReturnType<typeof readSettings>
 
-// `plan` and `notedPlanPath` are atoms: they survive a reload, and changing
-// `plan` redraws the pane. The rest are plain variables, which a reload
-// clears; the plugin learns each one again at the next draw or turn.
-
-/**
- * This session's plan. Bump `shape` when Plan's fields change, so a reload
- * ignores a value saved by older code.
- */
-const plan = atom({ plugin: 'plan-view', key: 'plan' } as const, null as Plan | null, { shape: 'v1' })
-
-/**
- * The last viewport each surface (terminal, desktop app, phone…) drew with,
- * kept apart so one surface's size never decides the pane's width on another.
- */
-const viewports: Partial<Record<RenderSurface, RenderViewport>> = {}
-
-/**
- * The plan path named by Claude Code's plan-mode notes. Until the first
- * note, `isDefaultPlanPath` decides.
- */
-const notedPlanPath = atom({ plugin: 'plan-view', key: 'notedPlanPath' } as const, null as string | null, {
-  shape: 'v1',
-})
-
-/**
- * The session the plan belongs to. /clear and an in-app resume change the
- * session id without firing session.start, so turn.start and /plan-view check.
- */
-let sessionId: string | undefined
-
-/** Turns the raw /config values into the ones the plugin uses, with defaults for anything missing. */
+/** Missing or unknown values fall back to the defaults. */
 function readSettings(options: PluginOptions) {
   return {
     autoOpen: options.autoOpen !== false,
@@ -57,176 +23,29 @@ function readSettings(options: PluginOptions) {
   }
 }
 
-/**
- * Whether `path` is a file right inside the plans folder of a home folder,
- * like ~/.claude/plans/my-plan.md, where Claude Code keeps plans by default.
- * A project's own .claude/plans doesn't count. A hooks module can't ask for
- * the home folder, so this knows the usual places for one.
- */
-const DEFAULT_PLAN_PATH =
-  /^(?:\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)[\\/]\.claude[\\/]plans[\\/][^\\/]+\.md$/
+// Atoms (`plan`, `notedPlanPath`) are held by CC for the session.
+//
+// They survive a plugin reload, and writing `plan` redraws the pane.
 
-function isDefaultPlanPath(path: string) {
-  return DEFAULT_PLAN_PATH.test(path)
-}
+/** This session's plan. Bump `shape` when Plan's fields change, so values saved by older code are ignored. */
+const plan = atom({ plugin: 'plan-view', key: 'plan' } as const, null as Plan | null, { shape: 'v1' })
 
-/** The viewport to size the dock for: the terminal's, or else any surface in the fullscreen layout. */
-function dockViewport() {
-  return viewports.terminal ?? Object.values(viewports).find(viewport => viewport?.isFullscreen)
-}
+/** The plan path named by CC's plan-mode notes. Until the first note, `isDefaultPlanPath` guesses. */
+const notedPlanPath = atom({ plugin: 'plan-view', key: 'notedPlanPath' } as const, null as string | null, {
+  shape: 'v1',
+})
 
 /**
- * The size to open the pane at: docked, its share of `columns` (the dock
- * viewport's if not given); Claude Code keeps it within its own limits. Above
- * the prompt (outside the fullscreen layout), the whole terminal's height, so
- * it opens as tall as Claude Code allows rather than its default third.
- *
- * The terminal's viewport is the conversation's width, which is the
- * terminal's only while nothing is docked beside it. The plugin never sizes
- * the pane from it while the pane is open, but another plugin's pane or the
- * diff panel still narrows it, and the plugin can't see either.
+ * The session last restored. /clear and an in-app resume switch sessions
+ * without session.start, so turn.start and /plan-view compare against this.
  */
-function paneSize(columns?: number) {
-  const viewport = dockViewport()
-  const totalColumns = columns ?? viewport?.columns
-  if (totalColumns === undefined) return undefined
-
-  return {
-    columns: Math.max(1, Math.floor(totalColumns * settings.widthShare)),
-    rows: viewport?.rows,
-  }
-}
-
-/** Opens the pane with no background of its own, so the terminal's shows through. */
-function openPane($: EngineInterface, size?: { columns?: number; rows?: number }) {
-  return $.ui.open({ id: PANE_ID, title: PANE_TITLE, backgroundColor: 'transparent', ...size })
-}
+let sessionId: string | undefined
 
 /**
- * Opens the pane on its own, but only where it can dock beside the chat. If
- * it can't be placed now, closes it, so it never pops up later out of nowhere.
- * A pane already open, even one waiting for room, is left as it is. Returns
- * what to save about a pane it opened, for the caller's one save.
+ * The last viewport each surface (terminal, desktop app, phone…) drew with.
+ * Kept apart so one device's size never sizes the pane on another.
  */
-async function autoOpenPane($: EngineInterface) {
-  if (!settings.autoOpen || dockViewport()?.isFullscreen !== true) return {}
-  const panes = await $.ui.panes()
-  if (panes.some(pane => pane.id === PANE_ID)) return {}
-
-  const terminalColumns = dockViewport()?.columns
-  // A close by hand may have landed while the panes were listed.
-  if ((await read($, plan))?.isDismissed) return {}
-  const opened = await openPane($, paneSize(terminalColumns))
-  if (opened.isPlaced) return { isOpen: true, terminalColumns }
-  await $.ui.close({ id: PANE_ID })
-  return {}
-}
-
-/**
- * Loads this session's saved plan, and reopens the pane if it was open when
- * the session last ran. Forgets the session if its plan file is gone. A pane
- * still open (after a reload) keeps its size, so a new Pane width waits for
- * the next open.
- */
-async function restoreSession($: EngineInterface) {
-  sessionId = await $.session.id()
-  const saved = await loadSession($, sessionId)
-  if (!saved) return
-  if (!(await planExists($, saved.path))) {
-    await forgetSession($, sessionId)
-    return
-  }
-  await saveAsNewest($, sessionId, saved)
-
-  const isDismissed = saved.isDismissed === true
-  await update($, plan, current => current ?? { path: saved.path, revision: 0, isDismissed })
-  if (!saved.isOpen) return
-  if ((await $.ui.panes()).some(pane => pane.id === PANE_ID)) return
-
-  // Sized by the current Pane width setting. Before the first draw the
-  // terminal's width is unknown, so the one saved with the session stands in.
-  // If the terminal is too narrow, Claude Code keeps the pane waiting and
-  // shows it once there's room.
-  await openPane($, paneSize(dockViewport()?.columns ?? saved.terminalColumns))
-}
-
-/** Restores the session if its id changed since the last restore, which is how /clear and an in-app resume are noticed. */
-async function restoreSessionIfChanged($: EngineInterface) {
-  if ((await $.session.id()) !== sessionId) await restoreSession($)
-}
-
-/**
- * Saves the plan as it stands now, with what `autoOpenPane` opened. Read
- * fresh, so a close by hand that landed meanwhile isn't saved over.
- */
-async function saveOpenedPlan(
-  $: EngineInterface,
-  path: string,
-  opened: { isOpen?: boolean; terminalColumns?: number },
-) {
-  const latest = await read($, plan)
-  if (latest?.path !== path) return
-  await saveSession($, { path, isDismissed: latest.isDismissed, ...(latest.isDismissed ? {} : opened) })
-}
-
-/**
- * Runs after a successful Write or Edit. A write to this session's plan file
- * starts or revises the plan; writes to other files are ignored. A subagent
- * may revise the current plan, but its own plan file isn't this session's.
- * Before any plan-mode note, a write starts a plan only if there's none yet.
- */
-async function handlePlanFileWrite($: EngineInterface, path: string, agentId: string | undefined) {
-  const current = await read($, plan)
-  const noted = await read($, notedPlanPath)
-  const isCurrentPlan = path === current?.path
-  const isSessionPlan = noted ? path === noted : !current && isDefaultPlanPath(path)
-  const isNewSessionPlan = !agentId && isSessionPlan
-  if (!isCurrentPlan && !isNewSessionPlan) return
-
-  const next = await update($, plan, previous => ({
-    path,
-    revision: (previous?.revision ?? 0) + 1,
-    // A close by hand only holds for the plan it closed.
-    isDismissed: previous?.path === path && previous.isDismissed,
-  }))
-  await saveOpenedPlan($, path, next?.isDismissed ? {} : await autoOpenPane($))
-}
-
-/**
- * Follows the plan file named by Claude Code's plan-mode notes, and bumps the
- * revision so the pane re-reads it (it may have changed outside Write and
- * Edit). A plan the plugin hadn't seen yet (a forked session, a plan written
- * before the plugin was on) opens the pane as a write would. `isNewPlan`: plan
- * mode was entered again, which undoes a close by hand.
- */
-async function handlePlanModeNote($: EngineInterface, path: string, { isNewPlan = false } = {}) {
-  const current = await read($, plan)
-  if (current?.path !== path) {
-    await update($, plan, previous => ({ path, revision: (previous?.revision ?? 0) + 1, isDismissed: false }))
-    await saveOpenedPlan($, path, await autoOpenPane($))
-    return
-  }
-
-  // Worked out from the value `update` hands over, so a close by hand that
-  // landed since the read above still holds.
-  await update($, plan, previous => {
-    if (!previous) return previous
-    return { ...previous, revision: previous.revision + 1, isDismissed: previous.isDismissed && !isNewPlan }
-  })
-  // saveSession skips a save that changes nothing.
-  if (isNewPlan) await saveSession($, { path, isDismissed: false })
-}
-
-/**
- * The plan file the plan-mode note named, taken up as this session's plan
- * if it now exists. A file written outside Write and Edit (by a shell
- * command, say) is announced by neither the note nor a write.
- */
-async function adoptNamedPlan($: EngineInterface) {
-  const path = await read($, notedPlanPath)
-  if (!path || !(await planExists($, path))) return null
-  return update($, plan, previous => previous ?? { path, revision: 1, isDismissed: false })
-}
+const viewports: Partial<Record<RenderSurface, RenderViewport>> = {}
 
 export const register: Register = (on, options) => {
   settings = readSettings(options)
@@ -308,11 +127,9 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // Closed by hand, the pane stays closed for this plan, even across restarts,
-  // until the next plan or /plan-view. The plugin's own closes (a /clear, an
-  // auto-open with no room) aren't the person's choice, so they save nothing.
-  // Quitting Claude Code drops the pane without calling this hook, so a pane
-  // left open at quit still counts as open on resume.
+  // A close by hand keeps the pane closed for this plan, across restarts, until
+  // the next plan or /plan-view. Other closes (a /clear, an auto-open with no
+  // room) save nothing. Quitting skips this hook, so a pane open at quit reopens.
   on('ui.close', { id: PANE_ID }, async ($, e, next) => {
     const result = await next(e)
     if (e.origin.kind !== 'person') return result
@@ -333,9 +150,9 @@ export const register: Register = (on, options) => {
     if (e.viewport) viewports[e.surface] = e.viewport
     const elements = $.ui.resolve(e)
     const { Box } = elements
+
     const current = await read($, plan)
     const text = current && (await readPlanText($, current.path))
-    // Less the padding on both sides.
     const width = Math.max(0, e.props.bodyColumns - 2 * PADDING_X)
 
     return (
@@ -344,4 +161,183 @@ export const register: Register = (on, options) => {
       </Box>
     )
   })
+}
+
+// Which file is the plan
+
+/**
+ * After a successful Write or Edit: a write to this session's plan file
+ * starts or updates the plan. A subagent can update the current plan but
+ * never starts one.
+ */
+async function handlePlanFileWrite($: EngineInterface, path: string, agentId: string | undefined) {
+  const current = await read($, plan)
+  const noted = await read($, notedPlanPath)
+  const isCurrentPlan = path === current?.path
+  const isSessionPlan = noted ? path === noted : !current && isDefaultPlanPath(path)
+  const isNewSessionPlan = !agentId && isSessionPlan
+  if (!isCurrentPlan && !isNewSessionPlan) return
+
+  const next = await update($, plan, previous => ({
+    path,
+    revision: (previous?.revision ?? 0) + 1,
+    // A close by hand only holds for the plan it closed.
+    isDismissed: previous?.path === path && previous.isDismissed,
+  }))
+  await saveOpenedPlan($, path, next?.isDismissed ? {} : await autoOpenPane($))
+}
+
+/**
+ * Follows the plan file CC's plan-mode note names. A new path becomes the
+ * plan and may open the pane; the same path bumps `revision`, since the file
+ * may have changed outside Write and Edit.
+ *
+ * `isNewPlan`: plan mode was entered again, which undoes a close by hand.
+ */
+async function handlePlanModeNote($: EngineInterface, path: string, { isNewPlan = false } = {}) {
+  const current = await read($, plan)
+  if (current?.path !== path) {
+    await update($, plan, previous => ({ path, revision: (previous?.revision ?? 0) + 1, isDismissed: false }))
+    await saveOpenedPlan($, path, await autoOpenPane($))
+    return
+  }
+
+  // Worked out from the value `update` hands over, so a close by hand that
+  // landed since the read above still holds.
+  await update($, plan, previous => {
+    if (!previous) return previous
+    return { ...previous, revision: previous.revision + 1, isDismissed: previous.isDismissed && !isNewPlan }
+  })
+  // saveSession skips a save that changes nothing.
+  if (isNewPlan) await saveSession($, { path, isDismissed: false })
+}
+
+/**
+ * For /plan-view: takes up the noted plan file if it exists, like one a shell
+ * command wrote, which neither the note nor a write announces.
+ */
+async function adoptNamedPlan($: EngineInterface) {
+  const path = await read($, notedPlanPath)
+  if (!path || !(await planExists($, path))) return null
+  return update($, plan, previous => previous ?? { path, revision: 1, isDismissed: false })
+}
+
+/** Where home folders usually are. A hooks module can't ask for the home folder. */
+const HOME_FOLDERS = [
+  '/Users/[^/]+', // macOS
+  '/home/[^/]+', // Linux
+  '/root', // Linux, as root
+  String.raw`[A-Za-z]:\\Users\\[^\\]+`, // Windows, like C:\Users\name
+]
+
+/**
+ * A file right inside a home folder's plans folder, like
+ * ~/.claude/plans/my-plan.md, where CC keeps plans by default. A project's
+ * own .claude/plans doesn't count.
+ *
+ * Used before any plan-mode note, so a plan written outside plan mode still shows.
+ */
+const DEFAULT_PLAN_PATH = new RegExp(String.raw`^(?:${HOME_FOLDERS.join('|')})[\\/]\.claude[\\/]plans[\\/][^\\/]+\.md$`)
+
+function isDefaultPlanPath(path: string) {
+  return DEFAULT_PLAN_PATH.test(path)
+}
+
+// Opening the pane
+
+/**
+ * Opens the pane on its own, only where it docks beside the chat. If CC can't
+ * place it, closes it again, so it never pops up later out of nowhere. A pane
+ * already open, even one waiting for room, is left alone.
+ *
+ * Returns what to save about a pane it opened.
+ */
+async function autoOpenPane($: EngineInterface) {
+  if (!settings.autoOpen || dockViewport()?.isFullscreen !== true) return {}
+
+  const panes = await $.ui.panes()
+  if (panes.some(pane => pane.id === PANE_ID)) return {}
+
+  const terminalColumns = dockViewport()?.columns
+  // A close by hand may have landed while the panes were listed.
+  if ((await read($, plan))?.isDismissed) return {}
+
+  const opened = await openPane($, paneSize(terminalColumns))
+  if (opened.isPlaced) return { isOpen: true, terminalColumns }
+
+  await $.ui.close({ id: PANE_ID })
+  return {}
+}
+
+function openPane($: EngineInterface, size?: { columns?: number; rows?: number }) {
+  return $.ui.open({ id: PANE_ID, title: PANE_TITLE, backgroundColor: 'transparent', ...size })
+}
+
+/** The size to open the pane at: its width share when docked, the full height above the prompt. CC caps both. */
+function paneSize(columns?: number) {
+  const viewport = dockViewport()
+  // The viewport is the chat's width. Another plugin's pane or the diff panel
+  // narrows it without the plugin knowing, so with one docked the pane opens narrower.
+  const totalColumns = columns ?? viewport?.columns
+  if (totalColumns === undefined) return undefined
+
+  return {
+    columns: Math.max(1, Math.floor(totalColumns * settings.widthShare)),
+    rows: viewport?.rows,
+  }
+}
+
+/** The viewport to size the dock for: the terminal's, or else any surface in the fullscreen layout. */
+function dockViewport() {
+  return viewports.terminal ?? Object.values(viewports).find(viewport => viewport?.isFullscreen)
+}
+
+// Sessions
+
+/**
+ * Loads this session's saved plan and reopens the pane if it was open last
+ * time. Forgets the session if its plan file is gone.
+ */
+async function restoreSession($: EngineInterface) {
+  sessionId = await $.session.id()
+
+  const saved = await loadSession($, sessionId)
+  if (!saved) return
+
+  if (!(await planExists($, saved.path))) {
+    await forgetSession($, sessionId)
+    return
+  }
+
+  await saveAsNewest($, sessionId, saved)
+
+  const isDismissed = saved.isDismissed === true
+  await update($, plan, current => current ?? { path: saved.path, revision: 0, isDismissed })
+  if (!saved.isOpen) return
+
+  // Left as it is, so a new Pane width applies at the next open.
+  if ((await $.ui.panes()).some(pane => pane.id === PANE_ID)) return
+
+  // Before the first draw the terminal's width is unknown, so the saved one
+  // stands in. With no room yet, CC shows the pane once there is.
+  await openPane($, paneSize(dockViewport()?.columns ?? saved.terminalColumns))
+}
+
+/** Restores again when the session id changed: how /clear and an in-app resume are noticed. */
+async function restoreSessionIfChanged($: EngineInterface) {
+  if ((await $.session.id()) !== sessionId) await restoreSession($)
+}
+
+/**
+ * Saves the plan with what `autoOpenPane` opened. Reads `plan` fresh, so a
+ * close by hand that landed meanwhile isn't saved over.
+ */
+async function saveOpenedPlan(
+  $: EngineInterface,
+  path: string,
+  opened: { isOpen?: boolean; terminalColumns?: number },
+) {
+  const latest = await read($, plan)
+  if (latest?.path !== path) return
+  await saveSession($, { path, isDismissed: latest.isDismissed, ...(latest.isDismissed ? {} : opened) })
 }

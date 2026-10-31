@@ -1,27 +1,37 @@
 import type { ElementTable } from 'claude-code'
 
-import { startsBlock } from './markdown'
 import type { Table } from './markdown'
+import { startsBlock } from './markdown'
 
 /** Spaces between two columns. */
 const COLUMN_GAP = 2
+
 /**
  * A column is never narrower than its longest word, up to this cap, so a long
  * path or URL wraps instead of turning the whole table into a list.
  */
 const MAX_MIN_WIDTH = 20
+
+// Measuring text on screen
+
 /**
  * Emoji, flags and East Asian characters take two cells on screen: Han, kana
  * (with ー and ・), Hangul, CJK punctuation like 「」、。 and fullwidth forms.
  */
 const WIDE_CHAR =
   /[\p{Emoji_Presentation}\p{Regional_Indicator}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303F\u30A0-\u30FF\u3200-\u33FF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/u
+
 /** A symbol that the emoji variation selector draws as a two-cell emoji, like ❤️. */
 const EMOJI_BY_SELECTOR = /\p{Extended_Pictographic}\uFE0F/u
-/** What a reader sees as one character, like 👍🏽 or 🇯🇵, though it's several code points. */
+
+/** Splits text into what a reader sees as one character, like 👍🏽 or 🇯🇵. */
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+// Keeping cells inline
+
 /** A bullet alone, which a Markdown block of its own draws as an empty list item. */
 const BARE_BULLET = /^[-+*]$/
+
 /** A numbered item's "1." or "1)", escaped as "1\." to stay inline. */
 const NUMBERED_START = /^(\d{1,9})([.)])(?=\s|$)/
 
@@ -140,6 +150,10 @@ function displayWidth(text: string) {
   return cellsWide(shownText(text))
 }
 
+function longestWord(text: string) {
+  return Math.max(0, ...shownText(text).split(/\s+/).map(cellsWide))
+}
+
 /** How many cells `shown` takes on screen. */
 function cellsWide(shown: string) {
   let width = 0
@@ -210,10 +224,6 @@ function escapeTrailingBackslash(text: string) {
 function inline(cell: string) {
   if (NUMBERED_START.test(cell)) return cell.replace(NUMBERED_START, '$1\\$2')
   return cell && (startsBlock(cell) || BARE_BULLET.test(cell)) ? '\\' + cell : cell
-}
-
-function longestWord(text: string) {
-  return Math.max(0, ...shownText(text).split(/\s+/).map(cellsWide))
 }
 
 function sum(numbers: number[]) {

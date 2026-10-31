@@ -1,20 +1,15 @@
-import type { EngineInterface } from 'claude-code'
-
 // Each session's plan path and pane state, saved so a restarted or resumed
 // session finds its plan and reopens its pane. Each session gets its own key
 // in the shared store, so sessions never overwrite each other.
+
+import type { EngineInterface } from 'claude-code'
 
 /** One session's saved entry. */
 export type SavedSession = {
   path: string
   /** Whether the pane was open when the session last ran. */
   isOpen?: boolean
-  /**
-   * The width the pane's share was taken of when it last docked, to size it
-   * on resume before the terminal's is known: the terminal's for /plan-view,
-   * the conversation's (the terminal's, less anything docked) for an open on
-   * its own.
-   */
+  /** The width the pane was sized from when it last docked, used on resume before the terminal's width is known. */
   terminalColumns?: number
   /** Closed by hand; see `Plan.isDismissed`. */
   isDismissed?: boolean

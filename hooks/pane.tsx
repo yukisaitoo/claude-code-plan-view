@@ -1,8 +1,8 @@
 import type { ElementTable, EngineInterface, RenderSurface } from 'claude-code'
 
 import type { Plan } from '../types'
-import { normalize, splitTables, unwrap } from './markdown'
 import type { Block } from './markdown'
+import { normalize, splitTables, unwrap } from './markdown'
 import { drawTable } from './table'
 
 export const NO_PLAN = 'No plan yet in this session.'
