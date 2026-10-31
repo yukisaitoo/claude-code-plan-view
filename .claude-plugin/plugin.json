@@ -6,7 +6,10 @@
   "author": {
     "name": "Yuki Saito"
   },
+  "homepage": "https://github.com/yukisaitoo/claude-code-plan-view",
+  "repository": "https://github.com/yukisaitoo/claude-code-plan-view",
   "license": "MIT",
+  "keywords": ["plan", "plan-mode", "pane", "mod"],
   "types": "./types/index.d.ts",
   "userConfig": {
     "autoOpen": {
