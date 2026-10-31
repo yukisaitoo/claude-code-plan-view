@@ -7,10 +7,34 @@ import { drawTable } from './table'
 
 export const NO_PLAN = 'No plan yet in this session.'
 
+/** A skin tone modifier. */
+const SKIN_TONE = /[\u{1F3FB}-\u{1F3FF}]/gu
+
+/** The tag characters that turn a black flag into a flag like Scotland's. */
+const FLAG_TAGS = /[\u{E0020}-\u{E007F}]/gu
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
 /** The plan file's text, ready to draw, or null if it can't be read. */
 export async function readPlanText($: EngineInterface, path: string) {
   const text = await $.fs.read(path).catch(() => null)
-  return text === null ? null : unwrap(normalize(text))
+  return text === null ? null : unwrap(simplifyEmoji(normalize(text)))
+}
+
+/**
+ * Some terminals, draw a joined emoji wider than the 2 cells CC lays it
+ * out in.
+ *
+ * So the pane draws the simple emoji instead: a joined one's first part only.
+ */
+function simplifyEmoji(text: string) {
+  let simple = ''
+  for (const { segment } of graphemes.segment(text)) {
+    const joiner = segment.indexOf('‍')
+    const isJoinedEmoji = joiner > 0 && /\p{Extended_Pictographic}/u.test(segment)
+    simple += isJoinedEmoji ? segment.slice(0, joiner) : segment
+  }
+  return simple.replace(SKIN_TONE, '').replace(FLAG_TAGS, '')
 }
 
 /** The pane's contents: the plan's full path, so it can be selected and copied, then the plan itself. */
